@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Path, Query
 from enum import Enum
 from typing import Annotated
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class CategoryType(str, Enum):
     football = "football"
@@ -39,19 +39,49 @@ async def read_posts_by_category(category_type: CategoryType):
 
     return {"category_type": category_type, "message": "hockey is very cool"}
 
-class Post(BaseModel):
-    author: str
+class PostSchema(BaseModel):
+    title: str = Field(min_length=5)
+    content: str = Field(min_length=20)
+    author: str = Field(pattern="^[a-zA-Z0-9]+$")
     category: CategoryType
-    content: str
+    published: bool = False
+
+class PostCreate(PostSchema):
+    pass
+
+class PostUpdate(PostSchema):
+    pass
+
+class Post(PostSchema):
+    id: int
 
 posts = [
-    Post(author = "johndoe",category = CategoryType.football, content = "Football content by john doe"),
-    Post(author = "admin",category = CategoryType.basketball, content = "Baskteball content by admin"),
-    Post(author = "johndoe",category = CategoryType.hockey, content = "Hockey content by john doe"),
-    Post(author = "johndoe",category = CategoryType.football, content = "Football content by john doe"),
-    Post(author = "admin",category = CategoryType.basketball, content = "Baskteball content by admin"),
-    Post(author = "admin",category = CategoryType.basketball, content = "Baskteball content by admin")
+    Post(id = 1, author = "johndoe",category = CategoryType.football, title="Dummy title1", content = "Football content by john doe"),
+    Post(id = 2, author = "admin",category = CategoryType.basketball, title="Dummy title2", content = "Baskteball content by admin"),
+    Post(id = 3, author = "johndoe",category = CategoryType.hockey, title="Dummy title3", content = "Hockey content by john doe"),
+    Post(id = 4, author = "johndoe",category = CategoryType.football, title="Dummy title4", content = "Football content by john doe"),
+    Post(id = 5, author = "admin",category = CategoryType.basketball, title="Dummy title5", content = "Baskteball content by admin"),
+    Post(id = 6, author = "admin",category = CategoryType.basketball, title="Dummy title6", content = "Baskteball content by admin")
 ]
+
+
+@app.post("/posts/")
+async def create_post(post_create: PostCreate) -> Post:
+    post = Post(**post_create.model_dump())
+    posts.append(
+        post
+    )
+    return post
+
+@app.put("/posts/{post_id}")
+async def update_post(post_id: Annotated[int, Path(ge=0)], post_update: PostUpdate):
+    filtered_posts = [[i, post] for i, post in enumerate(posts) if post.id == post_id]
+    if len(filtered_posts) == 0:
+        raise HTTPException(status_code=404, detail="Not found")
+    index, _ = filtered_posts[0]
+    posts[index] = Post(**post_update.model_dump(), id=post_id)
+    return posts[index]
+
 
 @app.get("/posts/")
 async def read_posts(
