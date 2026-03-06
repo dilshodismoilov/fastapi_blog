@@ -9,14 +9,6 @@ class CategoryType(str, Enum):
     hockey = "hockey"
 
 app = FastAPI()
-post_storage = {
-    1: "first post content",
-    2: "second post content",
-    3: "third post content",
-    4: "fourth post content",
-    5: "fifth post content",
-    6: "sixth post content",
-}
 
 user_storage = {
     "johndoe": "johndoe@mail.com",
@@ -39,12 +31,17 @@ async def read_posts_by_category(category_type: CategoryType):
 
     return {"category_type": category_type, "message": "hockey is very cool"}
 
+class Comment(BaseModel):
+    author: str = Field(pattern="^[a-zA-Z0-9]+$")
+    content: str = Field(min_length=1)
+
 class PostSchema(BaseModel):
     title: str = Field(min_length=5)
     content: str = Field(min_length=20)
     author: str = Field(pattern="^[a-zA-Z0-9]+$")
     category: CategoryType
     published: bool = False
+    comments: list[Comment] = Field(default_factory=list)
 
 class PostCreate(PostSchema):
     pass
@@ -55,12 +52,13 @@ class PostUpdate(PostSchema):
 class Post(PostSchema):
     id: int
 
-class PostPartialUpdate(PostSchema):
+class PostPartialUpdate(BaseModel):
     title: str | None = Field(default = None, min_length=5)
     content: str | None = Field(default = None, min_length=20)
     author: str | None = Field(default = None, pattern="^[a-zA-Z0-9]+$")
     category: CategoryType | None = None
     published: bool | None = None
+    comments: list[Comment] | None = None
 
 posts = {
     1: Post(id = 1, author = "johndoe",category = CategoryType.football, title="Dummy title1", content = "Football content by john doe"),
@@ -71,16 +69,25 @@ posts = {
     6: Post(id = 6, author = "admin",category = CategoryType.basketball, title="Dummy title6", content = "Baskteball content by admin")
 }
 
+@app.post("/posts/bulk/")
+async def create_posts(bulk_posts: list[PostCreate]) -> list[Post]:
+    created_posts = []
+    for post in bulk_posts:
+        post_id = len(posts) + 1
+        new_post = Post(**post.model_dump(), id=post_id)
+        posts[post_id] = new_post
+        created_posts.append(new_post)
+    return created_posts
 
 @app.post("/posts/")
 async def create_post(post_create: PostCreate) -> Post:
     post_id = len(posts) + 1
     post = Post(**post_create.model_dump(), id=post_id)
-    posts.update({post_id: post})
+    posts[post_id] = post
     return post
 
 @app.put("/posts/{post_id}")
-async def update_post(post_id: Annotated[int, Path(ge=0)], post_update: PostUpdate):
+async def update_post(post_id: Annotated[int, Path(ge=0)], post_update: PostUpdate) -> Post:
     post = posts.get(post_id, None)
     if post is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -89,7 +96,7 @@ async def update_post(post_id: Annotated[int, Path(ge=0)], post_update: PostUpda
     return new_post
 
 @app.patch("/posts/{post_id}")
-async def partial_update_post(post_id: Annotated[int, Path(ge=0)], post_partial_update: Annotated[PostPartialUpdate, Body()]):
+async def partial_update_post(post_id: Annotated[int, Path(ge=0)], post_partial_update: Annotated[PostPartialUpdate, Body()]) -> Post:
     post = posts.get(post_id, None)
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found")
@@ -105,21 +112,20 @@ async def read_posts(
     limit: Annotated[int | None, Query(ge=0)] = None,
     offset: Annotated[int | None, Query(ge=0)] = None,
     categories: Annotated[list[CategoryType] | None, Query()] = None    
-):
+) -> list[Post]:
     returning_posts = list(posts.values())
     if author:
         returning_posts = [post for post in returning_posts if post.author == author]
+    if categories:
+        returning_posts = [post for post in returning_posts if post.category in categories]
     if offset is not None:
         returning_posts = returning_posts[offset:]
     if limit is not None:
         returning_posts = returning_posts[:limit]
-    if categories:
-        returning_posts = [post for post in returning_posts if post.category in categories]
-    
     return returning_posts
 
 @app.get("/posts/{post_id}")
-async def read_post(post_id: Annotated[int, Path(gt=0)]):
+async def read_post(post_id: Annotated[int, Path(gt=0)]) -> Post:
     if post_id not in posts:
         raise HTTPException(status_code = 404, detail = "Post not found")
-    return {"post_id": post_id, "content": posts[post_id]}
+    return posts[post_id]
