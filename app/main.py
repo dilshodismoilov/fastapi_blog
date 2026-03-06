@@ -35,13 +35,18 @@ class Comment(BaseModel):
     author: str = Field(pattern="^[a-zA-Z0-9]+$")
     content: str = Field(min_length=1)
 
-class PostSchema(BaseModel):
+class PostBase(BaseModel):
     title: str = Field(min_length=5)
     content: str = Field(min_length=20)
     author: str = Field(pattern="^[a-zA-Z0-9]+$")
     category: CategoryType
     published: bool = False
+    
+class PostSchema(PostBase):
     comments: list[Comment] = Field(default_factory=list)
+
+class PostPublic(PostBase):
+    pass
 
 class PostCreate(PostSchema):
     pass
@@ -61,7 +66,17 @@ class PostPartialUpdate(BaseModel):
     comments: list[Comment] | None = None
 
 posts = {
-    1: Post(id = 1, author = "johndoe",category = CategoryType.football, title="Dummy title1", content = "Football content by john doe"),
+    1: Post(
+        id = 1, 
+        author = "johndoe",
+        category = CategoryType.football,
+        title="Dummy title1",
+        content = "Football content by john doe",
+        comments=[
+            Comment(author="dilshod", content="cool"),
+            Comment(author="dilshod2", content="cool2"),
+        ]
+    ),
     2: Post(id = 2, author = "admin",category = CategoryType.basketball, title="Dummy title2", content = "Baskteball content by admin"),
     3: Post(id = 3, author = "johndoe",category = CategoryType.hockey, title="Dummy title3", content = "Hockey content by john doe"),
     4: Post(id = 4, author = "johndoe",category = CategoryType.football, title="Dummy title4", content = "Football content by john doe"),
@@ -92,7 +107,7 @@ async def update_post(post_id: Annotated[int, Path(ge=0)], post_update: PostUpda
     if post is None:
         raise HTTPException(status_code=404, detail="Not found")
     new_post = Post(**post_update.model_dump(), id=post_id)
-    posts[post.id] = new_post
+    posts[post_id] = new_post
     return new_post
 
 @app.patch("/posts/{post_id}")
@@ -112,7 +127,7 @@ async def read_posts(
     limit: Annotated[int | None, Query(ge=0)] = None,
     offset: Annotated[int | None, Query(ge=0)] = None,
     categories: Annotated[list[CategoryType] | None, Query()] = None    
-) -> list[Post]:
+) -> list[PostPublic]:
     returning_posts = list(posts.values())
     if author:
         returning_posts = [post for post in returning_posts if post.author == author]
